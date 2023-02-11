@@ -1,0 +1,79 @@
+pipeline {
+    
+    agent any
+
+        tools {
+            
+            maven 'Maven-Tool'
+            
+        }    
+        // environment {
+        
+        //     PATH = "/var/lib/jenkins/tools/hudson.tasks.Maven_MavenInstallation/Maven-Tool/bin:$PATH"
+        
+        // }
+    
+    stages {
+        
+        stage ("Git Checkout") {
+            
+            steps {
+                
+                git branch: 'main', credentialsId: 'Github_Token', url: 'https://github.com/abhishekishor/tomcat-maven-jenkins.git'
+                
+            }
+            
+        }
+        
+        stage ("Maven Build") {
+            
+            steps {
+                
+                sh "mvn clean install"
+                
+            }
+        }
+        
+        stage ("Upload War File") {
+            
+            steps {
+                
+                archiveArtifacts artifacts: '**/*.war'
+                
+                sshagent(['tomcat-server']) {
+                    
+                    sh "scp -o StrictHostKeyChecking=no $WORKSPACE/target/maven-web-application.war ubuntu@54.255.237.208:/opt/tomcat/webapps"
+                    
+                }    
+                
+            }
+            
+        }
+
+        stage ("Code Analysis") {
+            
+            steps {
+                
+                sshagent(['sonarqube-server']) {
+                    
+                    script {
+                        
+                        withSonarQubeEnv(CredentialsId: 'sonarserver') {
+                        
+                        sh "mvn sonar:sonar -Dsonar.login=admin -Dsonar.password=xxxxxxx"
+                        
+                        }
+                        
+                     }
+                    
+                    
+                }
+                    
+            }
+                
+        }
+        
+    }
+    
+}
+            

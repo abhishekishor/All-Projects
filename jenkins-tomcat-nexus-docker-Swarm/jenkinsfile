@@ -1,0 +1,150 @@
+def buildNumber = BUILD_NUMBER
+
+def imageName = 'abhishekkishor1/maven-web-application'
+
+pipeline {
+    agent any
+    
+    tools {
+        
+        maven 'Maven-Tool'
+        
+    }
+    
+    environment {
+        
+        IP_ADDRESS = "172.31.3.46"
+        
+        ContainerName = "ff"
+        
+    }
+   
+    stages {
+        
+        stage ("Git Checkout") {
+           
+            steps {
+               
+                git branch: 'main', credentialsId: 'github-token',
+                url: 'https://github.com/abhishekishor/tomcat-maven-jenkins.git'
+            }
+           
+        }
+        
+        stage ("Maven-Build") {
+            
+            steps {
+                
+                sh "mvn clean install"
+                
+            }
+            
+        }
+        
+        stage ("Upload War File") {
+            
+            steps {
+                
+                sshagent(['tomcat-server']) {
+                    
+                    sh "scp -o StrictHostKeyChecking=no $WORKSPACE/target/maven-web-application.war ubuntu@172.31.16.105:/opt/tomcat/webapps"
+                    
+                }
+                
+            }
+            
+            post {
+                
+                success {
+                    
+                    archiveArtifacts artifacts: '**/*.war'
+                    
+                }
+                
+            }
+        }
+        
+        stage ("Upload-Artifact") {
+            
+            steps {
+                
+                script {
+                    
+                    def mavenPom = readMavenPom file: 'pom.xml'
+                    
+                    def nexusRepoName = mavenPom.version.endsWith ("SNAPSHOT") ? "jenkins-tomcat-nexus-snapshot" : "jenkins-tomat-nexus-release"
+                   
+                    nexusArtifactUploader artifacts: [
+                        [
+                            artifactId: "${mavenPom.artifactId}",
+                            classifier: '',
+                            file: "target/${mavenPom.artifactId}.war",
+                            type: "${mavenPom.packaging}"
+                        ]
+                    ],
+                        credentialsId: 'nexus3',
+                        groupId: "${mavenPom.groupId}",
+                        nexusUrl: "${env.IP_ADDRESS}:8081",
+                        nexusVersion: 'nexus3',
+                        protocol: 'http',
+                        repository: "${nexusRepoName}",
+                        version: "${mavenPom.version}"
+                
+                }
+            }
+        }
+        
+        stage ("Build Docker Image") {
+            
+            steps {
+                
+                sh "docker images | grep maven-web-application | tr -s ' ' | cut -d ' ' -f 2 |xargs -I {} docker rmi ${imageName}:{}"
+                
+                sh "docker build -t abhishekkishor1/maven-web-application:${buildNumber} ."
+                
+            }
+            
+        }
+        
+        stage ("DockerHub Login & PushImage") {
+            
+            steps {
+                
+                script {
+                    
+                    withCredentials([string(credentialsId: 'Docker_Hub_Pwd', variable: 'Docker_Hub_Pwd')]) {
+                        
+                        sh "docker login -u abhishekkishor1 -p ${Docker_Hub_Pwd}"
+                        
+                    }
+                    
+                    sh "docker push abhishekkishor1/maven-web-application:${buildNumber}"
+                    
+                }
+                
+            }
+        }
+        
+        stage ("Docker Server Login") {
+            
+            steps {
+                
+                script {
+                    
+                    sshagent(['Docker_Dev_Server_SSH']) {
+                        
+                        sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.23.8"
+                        
+                        sh "ssh ubuntu@172.31.23.8 docker service rm maven-web-application || true"
+                        
+                        sh "ssh ubuntu@172.31.23.8 docker service create --name maven-web-application -p 9090:8080 --replicas 2 abhishekkishor1/maven-web-application:${buildNumber}"
+                        
+                    }
+                    
+                }
+                
+            }
+        }
+    }
+   
+}
