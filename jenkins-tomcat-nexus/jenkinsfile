@@ -1,0 +1,80 @@
+pipeline {
+   
+    agent any
+   
+    tools {
+       
+        maven 'Maven-Tool'
+       
+    }
+   
+    environment {
+           
+            IP_ADDRESS = "172.31.7.77"
+        }
+   
+    stages {
+       
+        stage ("Git Checkout") {
+           
+            steps {
+               
+                git branch: 'main', credentialsId: 'Github_Token',
+                url: 'https://github.com/abhishekishor/tomcat-maven-jenkins.git'
+               
+            }
+           
+        }
+       
+        stage ("Maven Build") {
+           
+            steps {
+               
+                sh "mvn clean package"
+               
+            }
+        }
+       
+        stage ("Upload War File") {
+           
+            steps {
+            
+                sshagent(['tomcat-server']) {
+                       
+                    sh "scp -o StrictHostKeyChecking=no $WORKSPACE/target/maven-web-application.war ubuntu@172.31.21.87:/opt/tomcat/webapps"
+                       
+                    archiveArtifacts artifacts: '**/*.war'                  
+                }               
+            }           
+        }
+       
+        stage ("Upload-Artifact") {
+           
+            steps {
+               
+                script {
+                   
+                    def mavenPom = readMavenPom file: 'pom.xml'
+                   
+                    nexusArtifactUploader artifacts: [
+                        [
+                            artifactId: "${mavenPom.artifactId}",
+                            classifier: '',
+                            file: "target/${mavenPom.artifactId}.war",
+                            type: "${mavenPom.packaging}"
+                        ]
+                    ],
+                        credentialsId: 'nexus3',
+                        groupId: "${mavenPom.groupId}",
+                        nexusUrl: "${env.IP_ADDRESS}:8081",
+                        nexusVersion: 'nexus3',
+                        protocol: 'http',
+                        repository: 'jenkins-tocat-nexus-release/',
+                        version: "${mavenPom.version}"                   
+                }
+               
+            }
+           
+        }       
+    }
+}

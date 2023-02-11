@@ -1,0 +1,87 @@
+def ip_address="172.31.7.77"
+
+def tomcat_ip_address="172.31.21.87"
+
+node {
+    
+    timestamps {
+
+        //   buildDiscarder (logRotator(numToKeepStr: '2'))
+
+    stage('test') {
+        echo 'Knowledge Is Free'
+    
+    }
+
+        echo "=======================================Checking Out Code from Github======================================="
+        
+        stage('Git Checkout') {
+        
+        git branch: 'main', credentialsId: 'Github', url: 'https://github.com/abhishekishor/tomcat-maven-jenkins.git'
+        
+        echo "=======================================Pulled Code from Github======================================="
+        
+    }
+    
+    echo "=========================================Building Maven Project=========================================="
+    
+    stage('Maven Build') {
+        
+        def MavenHome= tool name: "Maven-Tool", type: "maven"
+        
+        def mavenCMD= "${MavenHome}/bin/mvn"
+        
+        sh "${mavenCMD} clean package"
+        
+    echo "==========================================Built Maven Project============================================"
+    
+    echo "=========================================Archieving Artifact============================================="
+    
+        archiveArtifacts artifacts: '**/*.war'
+    
+    echo "==========================================Artifact Archieved============================================="
+        
+    }
+    
+    stage('Deployment') {
+        
+        sshagent(['tomcat-server']) {
+            
+            sh "scp -o StrictHostKeyChecking=no /var/lib/jenkins/workspace/tomcat-nexus/target/maven-web-application.war ubuntu@'${tomcat_ip_address}':/opt/tomcat/webapps"
+    
+}
+        
+    }
+    
+    stage('Uploading-Artifact') {
+        
+        def mavenPom = readMavenPom file: 'pom.xml'
+        
+        def nexusRepoName = mavenPom.version.endsWith ("SNAPSHOT") ? "upload-artifact-snapshot" : "upload-artifact"
+
+    echo "=======================================Uploading Artifact========================================="
+    
+        nexusArtifactUploader artifacts: [
+    [
+        artifactId: "${mavenPom.artifactId}",
+        file: "target/${mavenPom.artifactId}.war", 
+        type: "${mavenPom.packaging}"
+    ]
+],
+    credentialsId: 'nexus3', 
+    groupId: "${mavenPom.groupId}", 
+    nexusUrl: "${ip_address}:8081", 
+    nexusVersion: 'nexus3', 
+    protocol: 'http', 
+    repository: "${nexusRepoName}", 
+    version: "${mavenPom.version}"
+    
+    echo "=======================================Artifact Uploaded========================================="
+        
+    }
+
+  }
+    
+}
+
+
