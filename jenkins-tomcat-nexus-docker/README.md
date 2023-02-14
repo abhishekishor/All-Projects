@@ -1,1 +1,0 @@
-# jenkins-tomcat-nexus-docker
